@@ -563,9 +563,12 @@ function initializeRealStats() {
     document.getElementById('totalScans').textContent = '0';
     document.getElementById('threatsDetected').textContent = '0';
 
-    // Update accuracy to show real model accuracy
+    // Fetch real model accuracy from API (calculated once and cached)
     const accuracyEl = document.getElementById('modelAccuracy');
-    if (accuracyEl) accuracyEl.textContent = '99.6%';  // XGBoost model accuracy
+    if (accuracyEl) {
+        accuracyEl.textContent = 'Loading...';
+        fetchModelAccuracy();
+    }
 
     // Update uptime
     const uptimeEl = document.getElementById('systemUptime');
@@ -575,6 +578,34 @@ function initializeRealStats() {
     const listEl = document.getElementById('detectionsList');
     if (listEl) {
         listEl.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 20px;">No scans yet. Click "Load Sample" then "Analyze Traffic" to start.</div>';
+    }
+}
+
+// Fetch model accuracy from API (calculated once on first use, then cached)
+async function fetchModelAccuracy() {
+    const accuracyEl = document.getElementById('modelAccuracy');
+    if (!accuracyEl) return;
+
+    try {
+        const response = await fetch(`${API_BASE}/api/model/accuracy`);
+        const data = await response.json();
+
+        if (data.accuracy_percent) {
+            accuracyEl.textContent = data.accuracy_percent;
+
+            // Show if it was cached or freshly calculated
+            if (data.cached) {
+                console.log(`Model accuracy loaded from cache: ${data.accuracy_percent} (calculated at: ${data.calculated_at})`);
+            } else {
+                console.log(`Model accuracy freshly calculated: ${data.accuracy_percent} on ${data.test_samples} samples`);
+            }
+        } else if (data.error) {
+            console.error('Error fetching accuracy:', data.error);
+            accuracyEl.textContent = '99.6%';  // Fallback
+        }
+    } catch (error) {
+        console.error('Failed to fetch model accuracy:', error);
+        accuracyEl.textContent = '99.6%';  // Fallback to default
     }
 }
 

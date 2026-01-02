@@ -34,6 +34,7 @@ data/processed/
 models/saved/*.joblib
 models/saved/*.pkl
 models/saved/*.h5
+models/saved/accuracy_cache.json
 
 # IDE
 .idea/
