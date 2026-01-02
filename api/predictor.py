@@ -72,25 +72,50 @@ class AnomalyPredictor:
         """Create derived features to match training pipeline."""
         df = df.copy()
         
-        # Byte features
+        # Byte-based features
         df['byte_ratio'] = df['src_bytes'] / (df['dst_bytes'] + 1)
         df['total_bytes'] = df['src_bytes'] + df['dst_bytes']
         df['log_src_bytes'] = np.log1p(df['src_bytes'])
         df['log_dst_bytes'] = np.log1p(df['dst_bytes'])
+        df['byte_diff'] = df['src_bytes'] - df['dst_bytes']
+        df['byte_product'] = np.log1p(df['src_bytes'] * df['dst_bytes'])
         
-        # Rate features
+        # Connection rate features
         df['srv_per_host'] = df['srv_count'] / (df['count'] + 1)
         df['error_rate_sum'] = df['serror_rate'] + df['rerror_rate']
         df['srv_error_sum'] = df['srv_serror_rate'] + df['srv_rerror_rate']
+        df['total_error_rate'] = df['error_rate_sum'] + df['srv_error_sum']
         
-        # Host features
+        # Host-based features
         df['host_same_srv_diff'] = df['dst_host_same_srv_rate'] - df['dst_host_diff_srv_rate']
         df['host_srv_ratio'] = df['dst_host_srv_count'] / (df['dst_host_count'] + 1)
         df['host_error_total'] = df['dst_host_serror_rate'] + df['dst_host_rerror_rate']
+        df['host_srv_error_total'] = df['dst_host_srv_serror_rate'] + df['dst_host_srv_rerror_rate']
         
-        # Interaction features
-        df['duration_bytes'] = df['duration'] * df['total_bytes']
-        df['count_srv_count'] = df['count'] * df['srv_count']
+        # DoS detection features
+        df['dos_indicator'] = (df['count'] * df['serror_rate']) + (df['srv_count'] * df['srv_serror_rate'])
+        df['syn_flood_indicator'] = df['count'] * (1 - df['same_srv_rate'])
+        
+        # Probe detection features
+        df['probe_indicator'] = df['dst_host_count'] * df['dst_host_diff_srv_rate']
+        df['scan_indicator'] = (1 - df['dst_host_same_srv_rate']) * df['dst_host_count']
+        
+        # R2L/U2R detection features
+        df['intrusion_indicator'] = df['num_failed_logins'] + df['num_compromised'] + df['root_shell'] * 10
+        df['privilege_indicator'] = df['su_attempted'] * 5 + df['num_root'] + df['num_shells']
+        
+        # Duration-based features
+        df['duration_bytes'] = np.log1p(df['duration'] * df['total_bytes'])
+        df['duration_count'] = np.log1p(df['duration']) * np.log1p(df['count'])
+        
+        # Connection pattern features
+        df['same_diff_ratio'] = df['same_srv_rate'] / (df['diff_srv_rate'] + 0.01)
+        df['srv_diff_host_indicator'] = df['srv_diff_host_rate'] * df['srv_count']
+        
+        # Binary indicators for suspicious activity
+        df['has_errors'] = ((df['serror_rate'] > 0) | (df['rerror_rate'] > 0)).astype(int)
+        df['high_count'] = (df['count'] > 100).astype(int)
+        df['zero_bytes'] = ((df['src_bytes'] == 0) & (df['dst_bytes'] == 0)).astype(int)
         
         return df
         
