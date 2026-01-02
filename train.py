@@ -33,25 +33,45 @@ FEATURE_NAMES = [
 ]
 CATEGORICAL_COLS = ['protocol_type', 'service', 'flag']
 
-# Attack type mapping (NSL-KDD specific attacks to categories)
-ATTACK_CATEGORIES = {
-    'normal': 'Normal',
-    # DoS attacks
-    'apache2': 'DoS', 'back': 'DoS', 'land': 'DoS', 'neptune': 'DoS',
-    'mailbomb': 'DoS', 'pod': 'DoS', 'processtable': 'DoS', 'smurf': 'DoS',
-    'teardrop': 'DoS', 'udpstorm': 'DoS', 'worm': 'DoS',
-    # Probe attacks
-    'ipsweep': 'Probe', 'mscan': 'Probe', 'nmap': 'Probe', 'portsweep': 'Probe',
-    'saint': 'Probe', 'satan': 'Probe',
-    # R2L attacks
-    'ftp_write': 'R2L', 'guess_passwd': 'R2L', 'httptunnel': 'R2L', 'imap': 'R2L',
-    'multihop': 'R2L', 'named': 'R2L', 'phf': 'R2L', 'sendmail': 'R2L',
-    'snmpgetattack': 'R2L', 'snmpguess': 'R2L', 'spy': 'R2L', 'warezclient': 'R2L',
-    'warezmaster': 'R2L', 'xlock': 'R2L', 'xsnoop': 'R2L',
-    # U2R attacks
-    'buffer_overflow': 'U2R', 'loadmodule': 'U2R', 'perl': 'U2R', 'ps': 'U2R',
-    'rootkit': 'U2R', 'sqlattack': 'U2R', 'xterm': 'U2R'
+# Specific attack types to detect (23 classes)
+# Only include attacks with sufficient samples in training data
+SPECIFIC_ATTACKS = {
+    # Normal traffic
+    'normal': {'name': 'Normal', 'category': 'Normal', 'severity': 'safe'},
+    
+    # DoS attacks (Denial of Service)
+    'neptune': {'name': 'Neptune', 'category': 'DoS', 'severity': 'critical'},
+    'smurf': {'name': 'Smurf', 'category': 'DoS', 'severity': 'critical'},
+    'back': {'name': 'Back', 'category': 'DoS', 'severity': 'high'},
+    'teardrop': {'name': 'Teardrop', 'category': 'DoS', 'severity': 'high'},
+    'pod': {'name': 'Pod', 'category': 'DoS', 'severity': 'high'},
+    'land': {'name': 'Land', 'category': 'DoS', 'severity': 'medium'},
+    
+    # Probe attacks (Reconnaissance)
+    'satan': {'name': 'Satan', 'category': 'Probe', 'severity': 'medium'},
+    'ipsweep': {'name': 'IPSweep', 'category': 'Probe', 'severity': 'medium'},
+    'nmap': {'name': 'Nmap', 'category': 'Probe', 'severity': 'medium'},
+    'portsweep': {'name': 'Portsweep', 'category': 'Probe', 'severity': 'medium'},
+    
+    # R2L attacks (Remote to Local)
+    'warezclient': {'name': 'WarezClient', 'category': 'R2L', 'severity': 'high'},
+    'guess_passwd': {'name': 'GuessPasswd', 'category': 'R2L', 'severity': 'high'},
+    'warezmaster': {'name': 'WarezMaster', 'category': 'R2L', 'severity': 'high'},
+    'imap': {'name': 'Imap', 'category': 'R2L', 'severity': 'medium'},
+    'ftp_write': {'name': 'FTPWrite', 'category': 'R2L', 'severity': 'high'},
+    'multihop': {'name': 'Multihop', 'category': 'R2L', 'severity': 'high'},
+    'phf': {'name': 'Phf', 'category': 'R2L', 'severity': 'medium'},
+    'spy': {'name': 'Spy', 'category': 'R2L', 'severity': 'critical'},
+    
+    # U2R attacks (User to Root - Privilege Escalation)
+    'buffer_overflow': {'name': 'BufferOverflow', 'category': 'U2R', 'severity': 'critical'},
+    'rootkit': {'name': 'Rootkit', 'category': 'U2R', 'severity': 'critical'},
+    'loadmodule': {'name': 'Loadmodule', 'category': 'U2R', 'severity': 'critical'},
+    'perl': {'name': 'Perl', 'category': 'U2R', 'severity': 'high'},
 }
+
+# Keep category mapping for backwards compatibility
+ATTACK_CATEGORIES = {k: v['category'] for k, v in SPECIFIC_ATTACKS.items()}
 
 
 def engineer_features(df):
@@ -108,8 +128,8 @@ def engineer_features(df):
 
 def main():
     print("\n" + "="*70)
-    print("  MULTI-CLASS ATTACK TYPE CLASSIFICATION")
-    print("  Categories: Normal, DoS, Probe, R2L, U2R")
+    print("  ADVANCED 23-CLASS ATTACK DETECTION")
+    print("  Detects specific attack types: Neptune, Smurf, Nmap, etc.")
     print("="*70)
     
     # Load data
@@ -119,30 +139,41 @@ def main():
     
     print(f"  Train: {len(train_df):,} | Test: {len(test_df):,}")
     
-    # Map attacks to categories
-    print("\n[2/6] Mapping attack types...")
-    train_df['attack_type'] = train_df['label'].map(lambda x: ATTACK_CATEGORIES.get(x, 'Unknown'))
-    test_df['attack_type'] = test_df['label'].map(lambda x: ATTACK_CATEGORIES.get(x, 'Unknown'))
+    # Map to specific attack names
+    print("\n[2/6] Mapping to 23 specific attack types...")
     
-    # Remove unknown (very rare attacks not in our mapping)
+    def get_attack_name(label):
+        if label in SPECIFIC_ATTACKS:
+            return SPECIFIC_ATTACKS[label]['name']
+        return 'Unknown'
+    
+    train_df['attack_type'] = train_df['label'].map(get_attack_name)
+    test_df['attack_type'] = test_df['label'].map(get_attack_name)
+    
+    # Remove unknown attacks (not in our 23 classes)
     train_df = train_df[train_df['attack_type'] != 'Unknown']
     test_df = test_df[test_df['attack_type'] != 'Unknown']
     
+    # Get unique attack types
+    attack_names = sorted(list(set(train_df['attack_type'].unique()) | set(test_df['attack_type'].unique())))
+    print(f"  Detected {len(attack_names)} unique attack types")
+    
     # Count distribution
     print("\n  Attack Type Distribution (Training):")
-    for atype in ['Normal', 'DoS', 'Probe', 'R2L', 'U2R']:
+    for atype in attack_names:
         count = sum(train_df['attack_type'] == atype)
-        pct = 100 * count / len(train_df)
-        print(f"    {atype}: {count:,} ({pct:.1f}%)")
+        pct = 100 * count / len(train_df) if len(train_df) > 0 else 0
+        if count > 0:
+            print(f"    {atype}: {count:,} ({pct:.1f}%)")
     
     # Feature engineering
     print("\n[3/6] Engineering features...")
     train_df = engineer_features(train_df)
     test_df = engineer_features(test_df)
     
-    # Encode labels
+    # Encode labels with all attack names
     label_encoder = LabelEncoder()
-    label_encoder.fit(['Normal', 'DoS', 'Probe', 'R2L', 'U2R'])
+    label_encoder.fit(attack_names)
     
     y_train = label_encoder.transform(train_df['attack_type'])
     y_test = label_encoder.transform(test_df['attack_type'])
@@ -198,7 +229,10 @@ def main():
     print(f"  ★ Weighted F1-Score: {f1*100:.2f}%")
     
     print("\n  Classification Report:")
-    print(classification_report(y_test, y_pred, target_names=label_encoder.classes_))
+    # Get unique labels in both test predictions and actual
+    unique_labels = sorted(list(set(y_test) | set(y_pred)))
+    target_names_filtered = [label_encoder.classes_[i] for i in unique_labels]
+    print(classification_report(y_test, y_pred, labels=unique_labels, target_names=target_names_filtered, zero_division=0))
     
     # Per-class accuracy
     print("  Per-Class Accuracy:")
@@ -210,14 +244,20 @@ def main():
     
     # Save
     print("\n  Saving model...")
+    
+    # Build attack info for API
+    attack_info = {name: info for name, info in SPECIFIC_ATTACKS.items()}
+    
     bundle = {
         'model': model,
         'scaler': scaler,
         'feature_names': list(all_cols),
         'label_encoder': label_encoder,
-        'model_type': 'RandomForest-300-MultiClass',
+        'model_type': 'RandomForest-300-23Class',
         'is_multiclass': True,
         'class_names': list(label_encoder.classes_),
+        'attack_info': attack_info,
+        'num_classes': len(label_encoder.classes_),
         'accuracy': acc,
         'f1_score': f1,
         'timestamp': datetime.now().isoformat()
@@ -226,8 +266,8 @@ def main():
     joblib.dump(scaler, os.path.join(MODELS_DIR, 'scaler.joblib'))
     
     print("\n" + "="*70)
-    print(f"  ★ MODEL SAVED - Multi-Class Attack Detection")
-    print(f"  ★ Classes: Normal, DoS, Probe, R2L, U2R")
+    print(f"  MODEL SAVED - Advanced 23-Class Attack Detection")
+    print(f"  Classes: {len(label_encoder.classes_)} specific attack types")
     print(f"  ★ Accuracy: {acc*100:.2f}%")
     print("  ★ Restart API: python api/app.py")
     print("="*70 + "\n")
