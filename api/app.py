@@ -114,6 +114,10 @@ def predict():
         features = pred.preprocess_input(data)
         prediction, confidence = pred.predict(features)
         
+        # Get the actual label FIRST (needed for detection engine)
+        actual_label = pred.get_label_name(prediction[0])
+        is_normal = actual_label == 'Normal'
+        
         # Use detection engine for enhanced analysis
         try:
             from api.detection_engine import get_engine
@@ -122,16 +126,14 @@ def predict():
             # Get source IP if available
             source_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
             
-            # Run enhanced analysis
+            # Run enhanced analysis - pass label info for correct threat detection
             analysis = engine.analyze(
-                ml_prediction=int(prediction[0]),
+                ml_prediction=0 if is_normal else 1,  # Convert to binary for detection engine
                 ml_confidence=float(confidence[0]) if confidence is not None else 0.5,
                 features=raw_features,
-                source_ip=source_ip
+                source_ip=source_ip,
+                ml_label=actual_label  # Pass the actual label
             )
-            
-            # Get the actual label from multi-class model (DoS, Probe, R2L, U2R, Normal)
-            actual_label = pred.get_label_name(prediction[0])
             
             # Build enhanced result
             result = {

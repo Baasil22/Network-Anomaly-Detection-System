@@ -305,16 +305,18 @@ class DetectionEngine:
         ml_prediction: int, 
         ml_confidence: float, 
         features: Dict[str, Any],
-        source_ip: Optional[str] = None
+        source_ip: Optional[str] = None,
+        ml_label: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Main analysis function - combines ML prediction with rule engine.
         
         Args:
-            ml_prediction: 0 = Normal, 1 = Attack (from ML model)
+            ml_prediction: 0 = Normal, 1 = Attack (binary for compatibility)
             ml_confidence: Confidence score 0-1
             features: Raw feature dictionary
             source_ip: Source IP for correlation (optional)
+            ml_label: The actual label from ML model (e.g., 'Normal', 'Neptune', 'Smurf')
             
         Returns:
             Comprehensive analysis result
@@ -327,7 +329,7 @@ class DetectionEngine:
         
         # 2. Determine threat level using tri-state classification
         threat_level, final_confidence = self._classify_threat(
-            ml_prediction, ml_confidence, rule_score, rule_flags
+            ml_prediction, ml_confidence, rule_score, rule_flags, ml_label
         )
         
         # 3. Time-based correlation (if IP provided)
@@ -454,36 +456,31 @@ class DetectionEngine:
         ml_pred: int, 
         ml_conf: float, 
         rule_score: float,
-        rule_flags: List[Dict]
+        rule_flags: List[Dict],
+        ml_label: Optional[str] = None
     ) -> Tuple[str, float]:
         """
         Tri-state classification: Normal / Suspicious / Attack
         
-        For multi-class model (alphabetically sorted):
-        - ml_pred = 0 means DoS
-        - ml_pred = 1 means Normal
-        - ml_pred = 2 means Probe
-        - ml_pred = 3 means R2L
-        - ml_pred = 4 means U2R
-        
-        IMPORTANT: Trust the ML model when it says Normal with high confidence!
+        Uses ml_label if provided (for 23-class model), otherwise uses ml_pred.
+        With binary ml_pred: 0 = Normal, 1 = Attack
         """
         attack_flags = [f for f in rule_flags if f.get('type') == 'attack']
         
         # Combine ML confidence with rule score
         combined_score = (ml_conf * 0.7) + (rule_score * 0.3)
         
-        # Multi-class: prediction == 1 means Normal (alphabetically sorted class names)
-        is_ml_normal = ml_pred == 1
+        # Determine if ML says Normal - use label if available, else use prediction
+        is_ml_normal = ml_label == 'Normal' if ml_label else (ml_pred == 0)
         
-        if not is_ml_normal:  # ML says attack (DoS, Probe, R2L, U2R)
+        if not is_ml_normal:  # ML says attack
             if ml_conf >= 0.85 or len(attack_flags) >= 2:
                 return ThreatLevel.ATTACK, combined_score
             elif ml_conf >= 0.6:
                 return ThreatLevel.SUSPICIOUS, combined_score
             else:
                 return ThreatLevel.SUSPICIOUS, combined_score * 0.8
-        else:  # ML says Normal (prediction = 1)
+        else:  # ML says Normal
             # Trust ML when it has high confidence, even if rules trigger
             if ml_conf >= 0.9:
                 return ThreatLevel.SAFE, ml_conf
