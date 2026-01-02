@@ -256,8 +256,9 @@ function simulatePrediction(data) {
 }
 
 function displayResult(container, result) {
-    // Get threat level from enhanced API or fallback to prediction
-    const threatLevel = result.threat_level || (result.prediction !== 0 ? 'attack' : 'safe');
+    // Check if it's Normal traffic by label (works with both 5-class and 23-class models)
+    const isNormal = result.label === 'Normal';
+    const threatLevel = result.threat_level || (isNormal ? 'safe' : 'attack');
     const isAttack = threatLevel === 'attack';
     const isSuspicious = threatLevel === 'suspicious';
     const confidence = (result.confidence * 100).toFixed(1);
